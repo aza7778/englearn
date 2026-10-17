@@ -1,29 +1,50 @@
 module.exports = async (req, res) => {
-  if (req.method !== "POST") return res.status(405).json({ error: "Faqat POST" });
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return res.status(500).json({ error: "ANTHROPIC_API_KEY Vercel’da o‘rnatilmagan" });
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Faqat POST" });
+  const key = process.env.GROQ_API_KEY;
+  if (!key)
+    return res
+      .status(500)
+      .json({ error: "GROQ_API_KEY Vercel’da o‘rnatilmagan" });
   try {
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
-    const messages = (body.messages || []).slice(-20).map(m => ({
+    const body =
+      typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
+    const messages = (body.messages || []).slice(-20).map((m) => ({
       role: m.role === "assistant" ? "assistant" : "user",
-      content: String(m.content || "").slice(0, 8000)
+      content: String(m.content || "").slice(0, 8000),
     }));
-    const imgs = (body.images || []).slice(0, 3).filter(u => typeof u === "string" && u.includes(","));
+    const imgs = (body.images || [])
+      .slice(0, 3)
+      .filter((u) => typeof u === "string" && u.includes(","));
+    let model = "llama-3.3-70b-versatile";
     if (imgs.length && messages.length) {
+      model = "meta-llama/llama-4-scout-17b-16e-instruct";
       const last = messages[messages.length - 1];
       last.content = [
-        ...imgs.map(u => ({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: u.split(",")[1] } })),
-        { type: "text", text: last.content }
+        ...imgs.map((u) => ({ type: "image_url", image_url: { url: u } })),
+        { type: "text", text: last.content },
       ];
     }
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
+    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-sonnet-5-5", max_tokens: 1500, messages })
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer " + key,
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 1500,
+        messages,
+      }),
     });
     const d = await r.json();
-    if (!r.ok) return res.status(500).json({ error: (d.error && d.error.message) || "API xatosi" });
-    res.status(200).json({ text: (d.content || []).map(c => c.text || "").join("") });
+    if (!r.ok)
+      return res
+        .status(500)
+        .json({ error: (d.error && d.error.message) || "API xatosi" });
+    res.status(200).json({
+      text: (d.choices && d.choices[0] && d.choices[0].message.content) || "",
+    });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
